@@ -93,8 +93,24 @@ camera_params = {
     "up": [0, -1, 0],     # 업 벡터
     "zoom": 0.5           # 줌 레벨
 }
+def downsample_pcd(pcd,
+                   voxel_size=0.2):
+    downsample_pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+    return downsample_pcd
 
+def lerp(a, b, t):
+    return a * (1 - t) + b * t
+    
 pcd_paths = load_pcd_paths(0)
+pcd_targets = load_pcds_from_paths(pcd_paths)
+pcd_targets = [downsample_pcd(x, 0.1) for x in pcd_targets]
+
+vis = Visualizer3D()
+for i, pcd in enumerate(pcd_targets):
+    points = pcd_to_numpy(pcd)
+    color = lerp(np.array([0, 0, 0]), np.array([1, 1, 0.5]), i / len(pcd_targets))
+    vis.set_points(points, color)
+vis.show()
 
 fixed_camera_visualization(pcd_paths, './output_frames', camera_params)
 
