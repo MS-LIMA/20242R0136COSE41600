@@ -19,3 +19,6 @@ def load_pcd(pcd_path:str):
 
 def pcd_to_numpy(pcd):
     return np.asarray(pcd.points)
+
+def numpy_to_v3v(points:np.ndarray):
+    return v3d(points)

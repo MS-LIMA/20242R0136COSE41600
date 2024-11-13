@@ -29,6 +29,13 @@ class Visualizer3D():
         pcd = points_to_pcd(points, point_color)
         vis.add_geometry(pcd)
     
+    def add_axis(self, 
+                 origin:List[float]=[0, 0, 0]):
+        vis = self.vis
+        
+        axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=origin)
+        vis.add_geometry(axis)
+        
     def add_bboxes_3d(self,
                       bboxes:np.ndarray):
         for bbox in bounding_boxes:

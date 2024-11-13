@@ -35,53 +35,22 @@ def load_pcds_from_paths(pcd_paths:List[str],
                               down_sample=True,
                               voxel_size=0.1):
     pcd_list = [load_pcd(file) for file in pcd_paths]
-    for i, pcd in enumerate(pcd_list):
+    for pcd in pcd_list:
         points = pcd_to_numpy(pcd)
         non_zero_points = points[~np.all(points == [0, 0, 0], axis=1)]
         pcd.points = o3d.utility.Vector3dVector(non_zero_points)
         
         if down_sample:
             pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
-        
-        pcd_list[i] = pcd
-        
+            
     return pcd_list
-
-def compute_static_voxels(pcd_buffers,
-                          voxel_sizes:List[float]=[0.15, 0.1, 0.05],
-                          matching_counts:List[int]=[10, 5, 3]):
-    
-    p2v = o3d.geometry.VoxelGrid.create_from_point_cloud
-    def get_voxel_centers(pcd, voxel_size):
-        voxel_grid = p2v(pcd, voxel_size)
-        centers = np.array([voxel_grid.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid.get_voxels()])
-        centers = np.round(centers, 2)
-        return centers
-
-    static_voxel_grids = []  
-    
-    for voxel_size, matching_count in zip(voxel_sizes, matching_counts):
-        
-        voxel_centers_list = [get_voxel_centers(x, voxel_size) for x in pcd_buffers]
-        ref_voxel_centers = voxel_centers_list[0]
-        voxel_centers = np.vstack(voxel_centers_list[1:])
-        tree = cKDTree(voxel_centers)
-        
-        static_voxel_centers = []
-        for voxel_center in ref_voxel_centers:
-            indices = tree.query_ball_point(voxel_center, voxel_size)
-            if len(indices) >= matching_count:
-                static_voxel_centers.append(voxel_center)
-        static_voxel_centers = np.vstack(static_voxel_centers)
-        voxel_grid = p2v(points_to_pcd(static_voxel_centers, [0,0,0]), voxel_size * 1.2)
-        static_voxel_grids.append(voxel_grid)
-    return static_voxel_grids
 
 def create_multi_scale_voxels(pcd,
                               max_voxel_size=0.5,
                               count=5):
     queries = np.asarray(pcd.points)
     output = voxel_grid.check_if_included(o3d.utility.Vector3dVector(queries))
+    
     
 def create_buffer_tree(pcds):
     points_list = []
@@ -176,89 +145,54 @@ def find_3d_bboxes(pcd,
     return bboxes_1234
 
 pcd_paths = load_pcd_paths(0)
-pcd_buffers, pcd_targets = split_pcd_paths(pcd_files=pcd_paths,
+pcd_buffer, _ = split_pcd_paths(pcd_files=pcd_paths,
                                 split_ratio=0.1,
                                 shuffle=True)    
 
-buffer_size = len(pcd_buffers)
-pcd_buffers = load_pcds_from_paths(pcd_buffers,
-                                  down_sample=False,
-                                  voxel_size=0.1)
-pcd_targets = load_pcds_from_paths(pcd_targets,
-                                  down_sample=False,
-                                  voxel_size=0.1)
+buffer_size = len(pcd_buffer)
+pcd_buffer = load_pcds_from_paths(pcd_buffer)
 
-voxel_buffers_list = compute_static_voxels(pcd_buffers=pcd_buffers,
-                                           voxel_sizes=[0.25, 0.1, 0.05],
-                                           matching_counts=[10, 5, 3])
+for pcd in pcd_buffer:
+    # vis = o3d.visualization.Visualizer()
+    # vis.create_window(window_name='')
+    # #vis.get_render_option().point_size = 4
+    # vis.get_render_option().background_color = [0, 0, 0]
+    
+    # voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd,
+    #                                                         voxel_size=0.05)
+    # vis.add_geometry([voxel_grid])
+    # vis.run()
+    # vis.destroy_window()
+    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=0.1)
 
+    # Voxel Grid 시각화
+    o3d.visualization.draw_geometries([voxel_grid], window_name="Voxelized Point Cloud")
+
+
+
+pcd_targets = load_pcds_from_paths(pcd_paths)
+_, pcd_buffer_tree = create_buffer_tree(pcd_buffer)
 for pcd_target in pcd_targets:
-    #pcd_filtered = filter_outliers(pcd_target)
-    #pcd_filtered = remove_road_plane(pcd_filtered)
-    pcd_filtered = pcd_target
-    points = pcd_to_numpy(pcd_filtered)
-    points_filtered = voxel_buffers_list[0].check_if_included(numpy_to_v3v(points))
-    
-    for i in [1, 2]:
-        b = voxel_buffers_list[i].check_if_included(numpy_to_v3v(points))
-        points_filtered = points_filtered | b
-        
-    points = points[~np.array(points_filtered)]
-    pcd_filtered.points = numpy_to_v3v(points)
-    
-    bboxes_3d = find_3d_bboxes(pcd_filtered,
-                            eps=0.3,
+    target_pcd = remove_static_points(pcd_target, 
+                                    pcd_buffer_tree,
+                                    distance_threshold=0.1,
+                                    match_count=int(buffer_size * 0.1))
+    target_pcd = filter_outliers(target_pcd)
+    target_pcd = remove_road_plane(target_pcd)
+
+    bboxes_3d = find_3d_bboxes(target_pcd,
+                            eps=0.8,
                             min_points=5)
 
-    pcd_filtered.colors = o3d.utility.Vector3dVector(np.array([[1, 1, 1] for _ in range(len(pcd_filtered.points))]))
-    visualize_with_bounding_boxes(pcd_filtered, bboxes_3d, point_size=2.0)
+    target_pcd.colors = o3d.utility.Vector3dVector(np.array([[1, 1, 1] for _ in range(len(target_pcd.points))]))
+    visualize_with_bounding_boxes(pcd_target, bboxes_3d, point_size=2.0)
 
-# for voxel_grid in voxel_buffers_list:
-#     # pcd = remove_road_plane(pcd)
-#     o3d.visualization.draw_geometries([voxel_grid], window_name="Voxelized Point Cloud")
-
-# for pcd in pcd_buffers:
     
-#     # print(pcd.get_max_bound(), pcd.get_min_bound(), pcd.get_center())
-#     voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=0.05)
-#     print(voxel_grid.origin)
-    # pcd.scale(1 / np.max(pcd.get_max_bound() - pcd.get_min_bound()),
-    #       center=pcd.get_center())
+
+
+
     
-    # points = pcd_to_numpy(pcd)
-    # vis = Visualizer3D()
-    # vis.set_points(points, [1, 1, 1])
-    # vis.add_axis()
-    # vis.add_axis(voxel_grid.origin)
-    # vis.show()
-
-# voxel_buffers = compute_static_voxels(pcd_buffers,
-#                                       voxel_sizes=[0.05])
-
-
-# for pcd in pcd_buffer:
-#     pcd = remove_road_plane(pcd)
-#     pcd = filter_outliers(pcd)
-#     voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=0.05)
-#     o3d.visualization.draw_geometries([voxel_grid], window_name="Voxelized Point Cloud")
-
-# pcd_targets = load_pcds_from_paths(pcd_paths)
-# _, pcd_buffer_tree = create_buffer_tree(pcd_buffer)
-# for pcd_target in pcd_targets:
-#     target_pcd = remove_static_points(pcd_target, 
-#                                     pcd_buffer_tree,
-#                                     distance_threshold=0.1,
-#                                     match_count=int(buffer_size * 0.1))
-#     target_pcd = filter_outliers(target_pcd)
-#     target_pcd = remove_road_plane(target_pcd)
-
-#     bboxes_3d = find_3d_bboxes(target_pcd,
-#                             eps=0.8,
-#                             min_points=5)
-
-#     target_pcd.colors = o3d.utility.Vector3dVector(np.array([[1, 1, 1] for _ in range(len(target_pcd.points))]))
-#     visualize_with_bounding_boxes(pcd_target, bboxes_3d, point_size=2.0)
-
+    
 # for pcd_file in pcd_files:
 #     pcd = load_pcd(os.path.join(data_root, pcd_file))
 #     points = pcd_to_numpy(pcd)
