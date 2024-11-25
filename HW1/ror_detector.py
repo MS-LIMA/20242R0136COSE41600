@@ -72,7 +72,7 @@ def compute_static_voxels(pcd_buffers,
         temp = voxel_centers_mask[mask]
         static_voxel_centers.append(temp)
         static_voxel_centers = np.vstack(static_voxel_centers)
-        static_voxel_grid = p2v(points_to_pcd(static_voxel_centers, [0, 0, 0]), voxel_size)
+        static_voxel_grid = p2v(numpy_to_pcd(static_voxel_centers, [0, 0, 0]), voxel_size)
         static_voxel_grids.append(static_voxel_grid)        
         
         # static_voxel_centers = []
@@ -198,7 +198,7 @@ print("Preprocessing loaded PCD files completed!")
 
 points_buffer = [pcd_to_numpy(x) for x in pcd_buffers]
 points_buffer = np.vstack(points_buffer)   
-pcd_buffer_agg = points_to_pcd(points_buffer) 
+pcd_buffer_agg = numpy_to_pcd(points_buffer) 
 
 cl, ind = pcd_buffer_agg.remove_radius_outlier(nb_points=int(buffer_size * 0.5), radius=0.5)
 ror_pcd = pcd_buffer_agg.select_by_index(ind)

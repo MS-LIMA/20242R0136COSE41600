@@ -71,7 +71,7 @@ def compute_static_voxels(pcd_buffers,
                                        distance_upper_bound=voxel_size)
         mask = np.sum(distances < voxel_size, axis=1) >= int(matching_count)
         temp = voxel_centers_mask[mask]
-        static_voxel_grid = p2v(points_to_pcd(temp, [0, 0, 0]), voxel_size * 1.15)
+        static_voxel_grid = p2v(numpy_to_pcd(temp, [0, 0, 0]), voxel_size * 1.15)
         static_voxel_grids.append(static_voxel_grid)      
         
         # o3d.visualization.draw_geometries([static_voxel_grid], window_name="Voxelized Point Cloud")
@@ -218,7 +218,7 @@ for pcd_target in pcd_targets:
         points_isolated.append(points_dist[~mask_voxel])
         points_static.append(points_dist[mask_voxel])
         
-        bboxes = find_3d_bboxes(points_to_pcd(points_isolated[-1]),
+        bboxes = find_3d_bboxes(numpy_to_pcd(points_isolated[-1]),
                                 eps=eps,
                                 min_points=min_points)
         bboxes_3d.extend(bboxes)

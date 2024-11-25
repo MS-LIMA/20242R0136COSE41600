@@ -73,7 +73,7 @@ def compute_static_voxels(pcd_buffers,
             if len(indices) >= matching_count:
                 static_voxel_centers.append(voxel_center)
         static_voxel_centers = np.vstack(static_voxel_centers)
-        voxel_grid = p2v(points_to_pcd(static_voxel_centers, [0,0,0]), voxel_size * 1.2)
+        voxel_grid = p2v(numpy_to_pcd(static_voxel_centers, [0,0,0]), voxel_size * 1.2)
         static_voxel_grids.append(voxel_grid)
     return static_voxel_grids
 

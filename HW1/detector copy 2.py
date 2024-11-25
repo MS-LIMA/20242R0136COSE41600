@@ -72,7 +72,7 @@ def compute_static_voxels(pcd_buffers,
         temp = voxel_centers_mask[mask]
         static_voxel_centers.append(temp)
         static_voxel_centers = np.vstack(static_voxel_centers)
-        static_voxel_grid = p2v(points_to_pcd(static_voxel_centers, [0, 0, 0]), voxel_size)
+        static_voxel_grid = p2v(numpy_to_pcd(static_voxel_centers, [0, 0, 0]), voxel_size)
         static_voxel_grids.append(static_voxel_grid)        
         
         # static_voxel_centers = []
@@ -224,7 +224,7 @@ for pcd_target in pcd_targets:
         dist = np.linalg.norm(points_filtered, axis=-1)
         mask = (dist >= dist_thres[0]) & (dist < dist_thres[1])
         points_dist_filtered = points_filtered[mask]
-        bboxes = find_3d_bboxes(points_to_pcd(points_dist_filtered),
+        bboxes = find_3d_bboxes(numpy_to_pcd(points_dist_filtered),
                                 eps=eps,
                                 min_points=min_points)
         bboxes_3d.extend(bboxes)

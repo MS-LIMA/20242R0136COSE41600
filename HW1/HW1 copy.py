@@ -1,13 +1,17 @@
 import os
 import random
 from copy import deepcopy
+from utils.utils import Timer
 from utils.o3d_utils import *
 from utils.visualizer import Visualizer3D, create_video
 from scipy.spatial import cKDTree
 from tqdm import tqdm
+from typing import List, Tuple
+
+timer = Timer()
 
 # I/O
-# -------------------------------------------
+# ===================================================== #
 def load_pcd_paths(index:int):
     
     data_list = ['01_straight_walk',
@@ -41,13 +45,41 @@ def split_pcd_paths(pcd_files:List[str],
             
     return sampled_list
 
+
+# Pre-process
+# ===================================================== #
+def downsample_pcd(pcd,
+                   voxel_size=0.2):
+    downsample_pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+    return downsample_pcd
+
+def filter_outliers(pcd, 
+                    nb_points=3, 
+                    radius=1.6):
+    cl, ind = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
+    ror_pcd = pcd.select_by_index(ind)
+    return ror_pcd
+
+def remove_road_plane(pcd, 
+                      distance_threshold=0.2,
+                      ransac_n=3,
+                      num_iterations=1000):
+    
+    plane_model, inliers = pcd.segment_plane(distance_threshold=distance_threshold,
+                                             ransac_n=ransac_n,
+                                             num_iterations=num_iterations)
+    ransac_pcd = pcd.select_by_index(inliers, invert=True)
+    return ransac_pcd
+
+
+# Detection
+# ===================================================== #
 def compute_static_voxels(pcd_buffers,
                           voxel_sizes:List[float]=[0.15, 0.2, 0.3],
-                          distance_thresholds:List[tuple[float]]=[(0,40),
+                          distance_thresholds:List[Tuple[float]]=[(0,40),
                                                                   (40,80),
                                                                   (80,999)],
                           matching_counts:List[int]=[100, 50, 30]):
-    print("Computing Static Voxels")
     
     points_list = [pcd_to_numpy(x) for x in pcd_buffers]
     points = np.vstack(points_list)
@@ -73,51 +105,8 @@ def compute_static_voxels(pcd_buffers,
         print(f"Total Voxels: {len(unique_voxels)}")
         print(f"Filtered Voxels (>=5 points): {len(filtered_voxels)}")
 
-        # voxel_centers_list = [get_voxel_centers(x, voxel_size) for x in pcd_buffers]
-        # voxel_centers = np.vstack(voxel_centers_list)
-        
-        # x = voxel_centers[:, 0]
-        # y = voxel_centers[:, 1]
-        # z = voxel_centers[:, 2]
-
-        # # 거리 계산
-        # r = np.sqrt(x**2 + y**2 + z**2)
-
-        # # Azimuth 계산 (수평 각도)
-        # azimuth = np.arctan2(y, x)
-
-        # # Elevation 계산 (수직 각도)
-        # elevation = np.arcsin(z / r)
-
-        # # [N, 5] 배열 생성
-        # voxel_centers = np.column_stack((x, y, z, azimuth, elevation))
-
-        # tree = cKDTree(voxel_centers)
-        
-        # dist = np.linalg.norm(voxel_centers, axis=-1)
-        # dist_mask = (dist >= dist_thres[0]) & (dist < dist_thres[1])
-        # voxel_centers_mask = voxel_centers[dist_mask]
-    
-        # distances, counts = tree.query(voxel_centers_mask,
-        #                                k=matching_count * 5,
-        #                                distance_upper_bound=voxel_size * 1.15)
-        # mask = np.sum(distances < voxel_size, axis=1) >= int(matching_count)
-        # temp = voxel_centers_mask[mask]
-        # static_voxel_grid = p2v(points_to_pcd(temp[...,:3], [0, 0, 0]), voxel_size)
-        # static_voxel_grids.append(static_voxel_grid)      
-        
-        # o3d.visualization.draw_geometries([static_voxel_grid], window_name="Voxelized Point Cloud")
-    
     print("Computing Static Voxels Completed!")
     return static_voxel_grids 
-
-
-# Preprocess
-# -------------------------------------------
-def downsample_pcd(pcd,
-                   voxel_size=0.2):
-    downsample_pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
-    return downsample_pcd
 
 def remove_static_points(pcd_target, 
                          points_buffer_tree, 
@@ -133,35 +122,6 @@ def remove_static_points(pcd_target,
 
     filtered_pcd = pcd_target.select_by_index(static_indices, invert=True)
     return filtered_pcd
-
-def visualize_with_bounding_boxes(pcd, bounding_boxes, window_name="Filtered Clusters and Bounding Boxes", point_size=1.0):
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(window_name=window_name)
-    vis.add_geometry(pcd)
-    for bbox in bounding_boxes:
-        vis.add_geometry(bbox)
-    vis.get_render_option().point_size = 4
-    vis.get_render_option().background_color = [0, 0, 0]
-    vis.run()
-    vis.destroy_window()
-
-def filter_outliers(pcd, 
-                    nb_points=3, 
-                    radius=1.6):
-    cl, ind = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
-    ror_pcd = pcd.select_by_index(ind)
-    return ror_pcd
-
-def remove_road_plane(pcd, 
-                      distance_threshold=0.2,
-                      ransac_n=3,
-                      num_iterations=1000):
-    
-    plane_model, inliers = pcd.segment_plane(distance_threshold=distance_threshold,
-                                             ransac_n=ransac_n,
-                                             num_iterations=num_iterations)
-    ransac_pcd = pcd.select_by_index(inliers, invert=True)
-    return ransac_pcd
 
 def find_3d_bboxes(pcd,
                    eps=0.6,
@@ -184,6 +144,10 @@ def find_3d_bboxes(pcd,
 
     return bboxes_1234, labels
 
+
+
+# Post-process
+# ===================================================== #
 def filter_3d_bboxes(bboxes, labels):
     filtered_bboxes = []
     for i, bbox in enumerate(bboxes):
@@ -196,9 +160,9 @@ def filter_3d_bboxes(bboxes, labels):
         min_bound = bbox.get_min_bound()
         max_bound = bbox.get_max_bound()
         center = (min_bound + max_bound) / 2
-            filtered_bboxes.append(bbox)
+        filtered_bboxes.append(bbox)
         
-    pass
+    return filtered_bboxes
 
 def refine_3d_bboxes(bboxes):
     refined_boxes = []
@@ -233,7 +197,13 @@ def refine_3d_bboxes(bboxes):
         refined_boxes.append(refined_bbox)
     return refined_boxes
 
+
+# Main
+# ===================================================== #
+
 index = 0
+
+print("* Loading PCD files. *")
 pcd_paths = load_pcd_paths(index)
 pcd_buffers = split_pcd_paths(pcd_files=pcd_paths,
                               split_ratio=1.0,
@@ -242,13 +212,17 @@ pcd_buffers = split_pcd_paths(pcd_files=pcd_paths,
 buffer_size = len(pcd_buffers)
 pcd_buffers = load_pcds_from_paths(pcd_buffers)
 pcd_targets = load_pcds_from_paths(pcd_paths)
+print("* Loading PCD files completed! - {}s *".format(timer.get_passed_time()))
+print("=================================")
 
-print("Preprocess loaded PCD files")
-# pcd_buffers = [downsample_pcd(x, 0.05) for x in tqdm(pcd_buffers)]
-# pcd_buffers = [filter_outliers(x) for x in tqdm(pcd_buffers)]
-# pcd_buffers = [remove_road_plane(x) for x in tqdm(pcd_buffers)]
-print("Preprocessing loaded PCD files completed!")
+# print("* Preprocess loaded PCD files. *")
+# # pcd_buffers = [downsample_pcd(x, 0.05) for x in tqdm(pcd_buffers)]
+# # pcd_buffers = [filter_outliers(x) for x in tqdm(pcd_buffers)]
+# # pcd_buffers = [remove_road_plane(x) for x in tqdm(pcd_buffers)]
+# print("* Preprocessing loaded PCD files completed! - {}s *".format(timer.get_passed_time()))
+# print("=================================")
 
+print("* Computing static voxels. *")
 voxel_sizes = [0.25, 0.35]
 distance_thresholds = [(0, 40), (40, 9999)] 
 matching_counts=[int(buffer_size * 0.1), int(buffer_size * 0.1)]
@@ -259,6 +233,8 @@ voxel_buffers_list = compute_static_voxels(pcd_buffers=pcd_buffers,
                                            voxel_sizes=voxel_sizes,
                                            distance_thresholds=distance_thresholds,
                                            matching_counts=matching_counts)
+print("* Computing static voxels completed! - {}s *".format(timer.get_passed_time()))
+print("=================================")
 
 print("Inferencing!")   
 for i, pcd_target in tqdm(enumerate(pcd_targets)):
