@@ -101,9 +101,34 @@ def downsample_pcd(pcd,
 def lerp(a, b, t):
     return a * (1 - t) + b * t
     
-pcd_paths = load_pcd_paths(0)
+pcd_paths = load_pcd_paths(2)
 pcd_targets = load_pcds_from_paths(pcd_paths)
-pcd_targets = [downsample_pcd(x, 0.1) for x in pcd_targets]
+# pcd_targets = [downsample_pcd(x, 0.1) for x in pcd_targets]
+
+# target = pcd_targets[0]
+# pcd_targets = pcd_targets[1:]
+# trans_init = np.asarray([[0.862, 0.011, -0.507, 0.5],
+#                          [-0.139, 0.967, -0.215, 0.7],
+#                          [0.487, 0.255, 0.835, -1.4], [0.0, 0.0, 0.0, 1.0]])
+
+# dist_target = np.linalg.norm(pcd_to_numpy(target), axis=-1)
+# mask_dist = (dist_target >= 0) & (dist_target < 100)
+# target_points = pcd_to_numpy(target)[mask_dist]
+
+# for i, pcd in enumerate(pcd_targets):
+#     points = pcd_to_numpy(pcd)
+#     dist = np.linalg.norm(points, axis=-1)
+#     mask_dist = (dist >= 0) & (dist < 100)
+#     points_dist = points[mask_dist]
+#     reg_p2p = o3d.pipelines.registration.registration_icp(
+#     points_to_pcd(points_dist), points_to_pcd(target_points), 
+#     0.02, trans_init, o3d.pipelines.registration.TransformationEstimationPointToPoint())
+    
+#     pcd.transform(reg_p2p.transformation)
+#     pcd_targets[i] = pcd
+#     # vis = Visualizer3D()
+#     # vis.set_points(pcd_to_numpy(pcd))
+#     # vis.show()
 
 vis = Visualizer3D()
 for i, pcd in enumerate(pcd_targets):

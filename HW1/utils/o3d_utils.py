@@ -5,6 +5,7 @@ from typing import List
 from tqdm import tqdm
 
 v3d = o3d.utility.Vector3dVector
+p2v = o3d.geometry.VoxelGrid.create_from_point_cloud
 
 def points_to_pcd(points:np.ndarray,
                   point_color:List[float]=[1,1,1]):
@@ -36,3 +37,11 @@ def pcd_to_numpy(pcd):
 
 def numpy_to_v3v(points:np.ndarray):
     return v3d(points)
+
+def get_voxel_centers(voxel_grid):
+    centers = np.array([voxel_grid.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid.get_voxels()])
+    centers = np.round(centers, 2)
+    return centers
+
+def pcd_to_voxel(pcd, voxel_size):
+    return p2v(pcd, voxel_size)
