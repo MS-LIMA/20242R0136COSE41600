@@ -41,5 +41,6 @@ def get_voxel_centers(voxel_grid):
     centers = np.round(centers, 2)
     return centers
 
-def pcd_to_voxel(pcd, voxel_size):
+def pcd_to_voxel(pcd, voxel_size, color=[0.2, 0.2, 0.2]):
+    pcd.colors= v3d(np.array([color for _ in range(len(pcd.points))]))
     return p2v(pcd, voxel_size)

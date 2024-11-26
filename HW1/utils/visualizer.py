@@ -81,7 +81,10 @@ class Visualizer3D():
         
         vis.destroy_window()
 
-def create_video(input_folder, output_path, fps=10):
+def create_video(input_folder, 
+                 output_path, 
+                 file_name,
+                 fps=10):
     images = [img for img in os.listdir(input_folder) if img.endswith(".png")]
     images.sort()
 
@@ -90,10 +93,10 @@ def create_video(input_folder, output_path, fps=10):
     height, width, layers = frame.shape
 
     # 비디오 라이터 설정
-    video = cv2.VideoWriter('result.avi', cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
+    video = cv2.VideoWriter(os.path.join(output_path, '{}.avi'.format(file_name)), cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
 
     for image in images:
-        video.write(cv2.imread(os.path.join(output_path, image)))
+        video.write(cv2.imread(os.path.join(input_folder, image)))
 
     cv2.destroyAllWindows()
     video.release()

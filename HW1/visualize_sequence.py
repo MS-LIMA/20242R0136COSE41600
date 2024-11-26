@@ -2,9 +2,10 @@ import os
 import random
 from copy import deepcopy
 from utils.o3d_utils import *
-from utils.visualizer import Visualizer3D
+from utils.visualizer import *
 from scipy.spatial import cKDTree
 import cv2
+from tqdm import tqdm
 
 def load_pcd_paths(index:int):
     data_list = ['01_straight_walk',
@@ -69,24 +70,6 @@ def fixed_camera_visualization(pcd_files, output_folder, camera_params):
 
     vis.destroy_window()
 
-def create_video(input_folder, output_file, fps=10):
-    # 이미지 파일 로드
-    images = [img for img in os.listdir(input_folder) if img.endswith(".png")]
-    images.sort()
-
-    # 첫 번째 이미지로부터 프레임 크기 추출
-    frame = cv2.imread(os.path.join(input_folder, images[0]))
-    height, width, layers = frame.shape
-
-    # 비디오 라이터 설정
-    video = cv2.VideoWriter(output_file, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
-
-    for image in images:
-        video.write(cv2.imread(os.path.join(input_folder, image)))
-
-    cv2.destroyAllWindows()
-    video.release()
-
 camera_params = {
     "lookat": [0, 0, 0],  # 보는 지점
     "front": [0, 0, -1],  # 카메라의 보기 방향
@@ -100,8 +83,10 @@ def downsample_pcd(pcd,
 
 def lerp(a, b, t):
     return a * (1 - t) + b * t
-    
-pcd_paths = load_pcd_paths(2)
+
+
+index = 6
+pcd_paths = load_pcd_paths(index)
 pcd_targets = load_pcds_from_paths(pcd_paths)
 # pcd_targets = [downsample_pcd(x, 0.1) for x in pcd_targets]
 
@@ -130,13 +115,36 @@ pcd_targets = load_pcds_from_paths(pcd_paths)
 #     # vis.set_points(pcd_to_numpy(pcd))
 #     # vis.show()
 
-vis = Visualizer3D()
-for i, pcd in enumerate(pcd_targets):
-    points = pcd_to_numpy(pcd)
-    color = lerp(np.array([0, 0, 0]), np.array([1, 1, 0.5]), i / len(pcd_targets))
-    vis.set_points(points, color)
+
+# create_video('./visualize_sequence/{}/raw'.format(index), 
+#              './visualize_sequence/{}'.format(index), 
+#              'result',
+#              30)
+
+points_cum = np.zeros((0, 3))
+for i, pcd in (enumerate(pcd_targets)):
+    
+    pcd_down = downsample_pcd(pcd)
+    points = pcd_to_numpy(pcd_down)
+    points_cum = np.concatenate([points_cum, points], axis=0)
+    
+    # color = lerp(np.array([0.1, 0.1, 0.1]), np.array([1, 1, 1]), i / len(pcd_targets))
+    color = [1, 1, 1]
+    vis = Visualizer3D()
+    vis.set_points(points_cum, color)
+    vis.set_camera_params('cam.json')
+    vis.show()
+    # vis.save_to_image('./visualize_sequence/{}/raw'.format(index), i)
+    
+    print('{} / {}'.format(i, len(pcd_targets)))
+
+# create_gif('./visualize_sequence/{}/raw'.format(index), './visualize_sequence/{}'.format(index))
+create_video('./visualize_sequence/{}/raw'.format(index), 
+             './visualize_sequence/{}'.format(index), 
+             'result',
+             30)
 vis.show()
 
-fixed_camera_visualization(pcd_paths, './output_frames', camera_params)
+# fixed_camera_visualization(pcd_paths, './output_frames', camera_params)
 
-create_video('./output_frames', 'output_video.avi')
+# create_video('./output_frames', 'output_video.avi')

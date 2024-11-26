@@ -1,3 +1,4 @@
+from fileinput import filename
 import os
 import random
 from copy import deepcopy
@@ -24,11 +25,12 @@ def load_pcd_paths(index:int):
                 '06_straight_crawl',
                 '07_straight_walk']
 
-    data_root = os.path.join('data', data_list[index], 'pcd')
+    file_name = data_list[index]
+    data_root = os.path.join('data', file_name, 'pcd')
     pcd_files = os.listdir(data_root)
     pcd_files.sort()
     pcd_files = [os.path.join(data_root, x) for x in pcd_files]
-    return pcd_files
+    return pcd_files, file_name
 
 def split_pcd_paths(pcd_files:List[str],
                     split_ratio:float=0.5,
@@ -47,7 +49,29 @@ def split_pcd_paths(pcd_files:List[str],
             
     return sampled_list
 
+def get_pcd_buffers(file_infos:dict, 
+                    index:int,
+                    use_all_related_files=False,
+                    split_ratio=1.0):
+    pcd_paths, file_name = file_infos[index]['pcd_path'], file_infos[index]['file_name']
+    pcd_paths_all = pcd_paths
 
+    if use_all_related_files == True:
+        pcd_paths_all = []
+        indices = []
+        if index in [0, 1, 2]:
+            indices = [0, 1, 2]
+        else:
+            indices = [3, 4, 5, 6]
+        for i in indices:
+            pcd_paths_all.extend(file_infos[i]['pcd_path'])
+
+    pcd_buffers = split_pcd_paths(pcd_files=pcd_paths_all,
+                                split_ratio=split_ratio,
+                                shuffle=False)  
+    
+    return pcd_buffers, pcd_paths, file_name
+    
 # Pre-process
 # ===================================================== #
 def downsample_pcd(pcd,
@@ -78,6 +102,7 @@ def remove_road_plane(pcd,
 # ===================================================== #
 def compute_static_voxels(pcd_buffers,
                           voxel_sizes:List[float],
+                          distance_thresholds:List[Tuple[float]],
                           matching_counts:List[int],
                           downsample:bool=False,
                           downsample_voxel_size:float=0.1):
@@ -90,9 +115,12 @@ def compute_static_voxels(pcd_buffers,
         pcd_downsampled = downsample_pcd(pcd_downsampled, downsample_voxel_size)
         points = pcd_to_numpy(pcd_downsampled)
         
+    dist = np.linalg.norm(points, axis=-1)
     static_voxel_grids = []  
-    for voxel_size, matching_count in tqdm(zip(voxel_sizes, matching_counts)):
-        voxel_indices = np.floor(points / voxel_size).astype(int)
+    for voxel_size, distance_threshold, matching_count in tqdm(zip(voxel_sizes, distance_thresholds, matching_counts)):
+        
+        points_in_dist = points[((dist >= distance_threshold[0]) & (dist < distance_threshold[1]))]
+        voxel_indices = np.floor(points_in_dist / voxel_size).astype(int)
         unique_voxels, counts = np.unique(voxel_indices, axis=0, return_counts=True)
         
         filtered_voxels = unique_voxels[counts >= matching_count]
@@ -102,30 +130,40 @@ def compute_static_voxels(pcd_buffers,
         static_voxel_grids.append(voxel_grid)
         
         print(f"Total Voxels (voxel size {voxel_size}): {len(unique_voxels)}")
-        print(f"Filtered Voxels (voxel size {voxel_size}, >={matching_count} points): {len(filtered_voxels)}")
+        print(f"Static Voxels (voxel size {voxel_size}, >= {matching_count} points): {len(filtered_voxels)}")
 
     return static_voxel_grids 
 
 def remove_static_points(points : np.ndarray, 
+                         distance_thresholds:List[Tuple[float]],
                          voxel_buffers_list,
                          matching_count = 2):
     
-    points = points.copy()  
+    dist = np.linalg.norm(points, axis=-1)
+    points_list = []
+    for distance_threshold, voxel_grid in zip(distance_thresholds, voxel_buffers_list):
+        points_in_dist = points[((dist >= distance_threshold[0]) & (dist < distance_threshold[1]))]
+        mask_static = np.array(voxel_grid.check_if_included(numpy_to_v3v(points_in_dist)))
+        points_list.append(points_in_dist[~mask_static])
     
-    voxel_grid = voxel_buffers_list[0]
-    mask_static = np.array(voxel_grid.check_if_included(numpy_to_v3v(points)))
+    return np.vstack(points_list)
+
+    # points = points.copy()  
     
-    points = points[~mask_static]
-    mask_static = np.zeros((points.shape[0], len(voxel_buffers_list)-1))
+    # voxel_grid = voxel_buffers_list[0]
+    # mask_static = np.array(voxel_grid.check_if_included(numpy_to_v3v(points)))
     
-    for i, voxel_grid in enumerate(voxel_buffers_list[1:]):
-        mask_static_single = np.array(voxel_grid.check_if_included(numpy_to_v3v(points)))
-        mask_static[..., i] = mask_static_single
+    # points = points[~mask_static]
+    # mask_static = np.zeros((points.shape[0], len(voxel_buffers_list)-1))
     
-    mask_static = mask_static.sum(axis=1)
-    mask_static = mask_static >= matching_count
+    # for i, voxel_grid in enumerate(voxel_buffers_list[1:]):
+    #     mask_static_single = np.array(voxel_grid.check_if_included(numpy_to_v3v(points)))
+    #     mask_static[..., i] = mask_static_single
     
-    points = points[~mask_static]
+    # mask_static = mask_static.sum(axis=1)
+    # mask_static = mask_static >= matching_count
+    
+    # points = points[~mask_static]
     
     return points
 
@@ -135,13 +173,14 @@ def find_3d_bboxes(pcd,
     
     #with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
         # labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=False))
+
     labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=False))
     
-    min_points_in_cluster = 4
+    min_points_in_cluster = 3
     max_points_in_cluster = 999
     min_z_value = -999
     max_z_value = 999
-    height_diff = 0.05
+    height_diff = 0.12
     
     bboxes_1234 = []
     max_label = labels.max()
@@ -157,23 +196,25 @@ def find_3d_bboxes(pcd,
         
         #print(min_points_in_cluster, len(cluster_indices), max_points_in_cluster, min_z_value, z_min, z_max, max_z_value)
         if min_points_in_cluster <= len(cluster_indices) <= max_points_in_cluster:
-            if abs(z_max - z_min) >= height_diff:
-                if min_z_value <= z_min and z_max <= max_z_value:
-                    bbox = cluster_pcd.get_axis_aligned_bounding_box()
-                    
-                    min_bound = bbox.get_min_bound()
-                    max_bound = bbox.get_max_bound()
-                    
-                    w, l = abs(min_bound[0] - max_bound[0]), abs(min_bound[1] - max_bound[1])
-                    xy_volume = w * l
-                    
-                    # print(xy_volume, w, l, z_min, z_max, bbox.get_center())
-            
-                    if (w >= 0.7 or l >= 0.7) and z_max >= 4.6:
-                       continue
-                    
-                    bbox.color = (1, 0, 0) 
-                    bboxes_1234.append(bbox)
+            if min_z_value <= z_min and z_max <= max_z_value:
+                bbox = cluster_pcd.get_axis_aligned_bounding_box()
+                
+                min_bound = bbox.get_min_bound()
+                max_bound = bbox.get_max_bound()
+                
+                w, l = abs(min_bound[0] - max_bound[0]), abs(min_bound[1] - max_bound[1])
+                xy_volume = w * l
+                
+                # print(xy_volume, w, l, z_min, z_max, z_max - z_min, bbox.get_center())
+        
+                if ((w >= 0.7 or l >= 0.7) or abs(z_max - z_min) < height_diff) and z_max >= 4.6:
+                    continue
+
+                if xy_volume >= 1.0:
+                    continue
+                
+                bbox.color = (1, 0, 0) 
+                bboxes_1234.append(bbox)
 
     return bboxes_1234, labels
 
@@ -256,13 +297,26 @@ def inference_mp(items, shared_dict):
 # Main
 # ===================================================== #
 
-index = 0
+# 0: '01_straight_walk',
+# 1: '02_straight_duck_walk',
+# 2: '03_straight_crawl',
+# 3: '04_zigzag_walk',
+# 4: '05_straight_duck_walk',
+# 5: '06_straight_crawl',
+# 6: '07_straight_walk'
+
+# (0 ~ 6)
+index = 3
 
 print("* Loading PCD files. *")
-pcd_paths = load_pcd_paths(index)
-pcd_buffers = split_pcd_paths(pcd_files=pcd_paths,
-                              split_ratio=1.0,
-                              shuffle=False)    
+file_infos = []
+for i in range(7):
+    pcd_path, file_name = load_pcd_paths(i)
+    file_infos.append({'pcd_path' : pcd_path, 'file_name' : file_name})
+pcd_buffers, pcd_paths, file_name = get_pcd_buffers(file_infos=file_infos, 
+                                                    index=index, 
+                                                    use_all_related_files=True,
+                                                    split_ratio=0.5)
 
 buffer_size = len(pcd_buffers)
 pcd_buffers = load_pcds_from_paths(pcd_buffers)
@@ -278,18 +332,15 @@ print("=================================")
 # print("=================================")
 
 print("* Computing static voxels. *")
-voxel_sizes = [0.25, 0.35, 0.45]
-matching_counts=[int(buffer_size * 0.1), 
-                 int(buffer_size * 0.2), 
-                 int(buffer_size * 0.3),
-                 int(buffer_size * 0.4)]
-
-distance_thresholds = [(0, 40), (40, 99999)]    
-eps_thresholds = [0.3, 1.5]                        
-min_points_thresholds = [6, 3]   
+voxel_sizes = [0.2, 0.25, 0.3]
+matching_counts=[int(buffer_size * 0.05), 
+                 int(buffer_size * 0.05),
+                 int(buffer_size * 0.05)]
+distance_thresholds = [(0, 20), (20, 50), (50, 9999)]
 
 voxel_buffers_list = compute_static_voxels(pcd_buffers=pcd_buffers,
                                            voxel_sizes=voxel_sizes,
+                                           distance_thresholds=distance_thresholds,
                                            matching_counts=matching_counts,
                                            downsample=False,
                                            downsample_voxel_size=0.05)
@@ -327,18 +378,33 @@ if use_mp:
         vis.set_camera_params('cam.json')
         # vis.show()
         vis.save_to_image('./output/{}/raw'.format(index), i)
-else:      
+else: 
+    
+    inference_count = 0
+    inference_time_cum = 0
+    
+    eps_thresholds = [0.3, 2.5, 2]                        
+    min_points_thresholds = [8, 5, 4]   
+    
     for i, pcd_target in (enumerate(pcd_targets)):
         
         timer.reset()
+        
         pcd_filtered = pcd_target
         pcd_filtered = remove_road_plane(pcd_filtered)
         points = pcd_to_numpy(pcd_filtered)
         
         points_org = points.copy()
-        points = remove_static_points(points, 
-                                      voxel_buffers_list)
-        
+        points = remove_static_points(points,
+                                      distance_thresholds,
+                                      voxel_buffers_list,
+                                      matching_count=1)
+
+        # vis = Visualizer3D()
+        # vis.set_points(points)
+        # vis.set_camera_params('cam.json')
+        # vis.show()
+
         dist = np.linalg.norm(points, axis=-1)
         bboxes_3d = []
         
@@ -352,21 +418,31 @@ else:
             bboxes = refine_3d_bboxes(bboxes)
             bboxes_3d.extend(bboxes)
             
+        inference_count += 1
         inference_time = timer.get_passed_time()
-        print("Scene Index {} / {} - {}s".format(i + 1, len(pcd_targets), inference_time))
+        inference_time_cum += inference_time
+        
+        print("Scene Index {} / {} - {}s / avg {}".format(i + 1, 
+                                                          len(pcd_targets), 
+                                                          round(inference_time, 3),
+                                                          round(inference_time_cum / inference_count, 3)))
         
         vis = Visualizer3D()
         vis.set_points(points_org)
         vis.add_bboxes_3d(bboxes_3d)
         vis.set_camera_params('cam.json')
         # vis.show()
-        vis.save_to_image('./output/{}/raw'.format(index), i)
+        vis.save_to_image('./output/{}/raw'.format(file_name), i)
 
 print("* Inferencing finished! *")   
 print("=================================")
 
 print("* Creating output video. *")   
-create_gif('./output/{}/raw'.format(index), 
-           './output/{}'.format(index), 0.01)
+# create_gif('./output/{}/raw'.format(index), 
+#            './output/{}'.format(index), 0.01)
+create_video('./output/{}/raw'.format(file_name),
+             './output/{}'.format(file_name), 
+             file_name,
+             30)
 print("* Creating output video finished! *")   
 print("=================================")
