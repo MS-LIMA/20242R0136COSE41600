@@ -225,29 +225,25 @@ def refine_3d_bboxes(bboxes):
     for bbox in bboxes:
         # 기존 바운딩 박스 정보
         center = bbox.get_center()
-        extent = bbox.get_extent()  # Bounding Box 크기 (dx, dy, dz)
+        extent = bbox.get_extent()  
 
-        # 사람 크기 추정: 상체 높이와 위치를 기준으로 전체 키 추정
-        upper_height = extent[2]  # y 방향 높이 (상체 높이)
-        full_height = max(1.6, upper_height * 2.0)  # 전체 사람 키 (1.6m 이상으로 가정)
-        full_width = max(0.7, extent[0])  # x 방향 폭 (최소 0.5m 이상)
-        full_depth = max(0.7, extent[1])  # y 방향 깊이 (최소 0.4m 이상)
+        upper_height = extent[2]  
+        full_height = max(1.6, upper_height * 2.0)  
+        full_width = max(0.7, extent[0])  
+        full_depth = max(0.7, extent[1]) 
     
-        # 바운딩 박스 확장: 아래쪽으로 높이를 추가
         min_bound = bbox.get_min_bound()
         max_bound = bbox.get_max_bound()
 
-        # y축 (높이) 조정: 아래로 확장
-        min_bound[2] -= full_height - upper_height  # 아래로 확장
-        max_bound[2] += 0.1  # 상체 위쪽 약간 여유 추가
+        min_bound[2] -= full_height - upper_height  
+        max_bound[2] += 0.1  
         x_center = (min_bound[0] + max_bound[0]) / 2
         y_center = (min_bound[1] + max_bound[1]) / 2
-        min_bound[0] = x_center - full_width / 2  # x축 좌측 확장
-        max_bound[0] = x_center + full_width / 2  # x축 우측 확장
-        min_bound[1] = y_center - full_depth / 2  # y축 앞 확장
-        max_bound[1] = y_center + full_depth / 2  # y축 뒤 확장
+        min_bound[0] = x_center - full_width / 2 
+        max_bound[0] = x_center + full_width / 2  
+        min_bound[1] = y_center - full_depth / 2 
+        max_bound[1] = y_center + full_depth / 2  
 
-        # 새 바운딩 박스 생성
         refined_bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
         refined_bbox.color = (1, 0, 0) 
         refined_boxes.append(refined_bbox)
